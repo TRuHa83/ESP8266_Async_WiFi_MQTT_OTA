@@ -11,12 +11,7 @@
 
 #include <ArduinoJson.h>
 
-#define MQTT_HOST IPAddress(10, 0, 10, 51)
 #define MQTT_PORT 1883
-#define USERNAME "mqttserver"
-#define PASSWORD "mqttserver"
-#define TOPIC_SUB "letrero/command"
-#define TOPIC_PUB "letrero/state"
 
 AsyncWebServer server(80);
 DNSServer dns;
@@ -24,16 +19,17 @@ DNSServer dns;
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
 
-char mqtt_server[40] = "10.0.10.51";
-char mqtt_port[6] = "1883"; 
-char mqtt_user[40] = "mqtt";
-char mqtt_psw[40] = "mqtt";
+char mqtt_server[40];
+char mqtt_port[6]; 
+char mqtt_user[40];
+char mqtt_psw[40];
 
-const String command = "letrero/command";
-const String toggle = "toggle";
-const String reset = "reset";
-const String reboot = "reboot";
-const String OTA = "OTA";
+const char* state = "wemos/state";
+const char* command = "wemos/command";
+const char* toggle = "toggle";
+const char* reset = "reset";
+const char* reboot = "reboot";
+const char* OTA = "OTA";
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -45,24 +41,16 @@ void saveConfigCallback () {
 }
 
 void connectToMqtt() {
-  Serial.println("Connecting to MQTT...");
-  Serial.print("IP: ");
-  Serial.println(mqtt_server);
-  Serial.print("Port: ");
-  Serial.println(mqtt_port);
-  Serial.print("User: ");
-  Serial.println(mqtt_user);
-  Serial.print("Psw: ");
-  Serial.println(mqtt_psw);
-
+  Serial.print("Connecting to MQTT...");
   mqttClient.connect();
 }
 
 void onMqttConnect(bool sessionPresent) {
-  Serial.println("Letrero ready.");
+  Serial.println("done.");
+  Serial.println("Wemos ready.");
 
-  mqttClient.publish( TOPIC_PUB, 0, false, "ready" );
-  mqttClient.subscribe(TOPIC_SUB, 2);
+  mqttClient.publish( state, 2, true, "ready" );
+  mqttClient.subscribe( command, 2 );
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -74,10 +62,22 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  Serial.print("topic: ");
-  Serial.println(topic);
-  Serial.print("payload: ");
-  Serial.println(payload);
+  if (topic == command){
+    if (payload == toggle){
+      Serial.print("toggle");
+    }
+    else if (payload == reset){
+      Serial.print("reset");
+      //wifiManager.resetSettings();
+    }
+    else if (payload == reboot){
+      Serial.print("reboot");
+      ESP.restart();
+    }
+    else if (payload == OTA){
+      Serial.print("OTA");
+    }
+  }
 }
 
 void load_config(){
@@ -127,7 +127,6 @@ void setup() {
   load_config();
 
   AsyncWiFiManager wifiManager(&server,&dns);
-  //wifiManager.resetSettings();
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
@@ -141,15 +140,6 @@ void setup() {
   wifiManager.addParameter(&custom_mqtt_port);
   wifiManager.addParameter(&custom_mqtt_user);
   wifiManager.addParameter(&custom_mqtt_psw);
-
-  int  port;
-  port = atoi(mqtt_port);
-
-  mqttClient.setCredentials( mqtt_user, mqtt_psw );
-  mqttClient.onConnect(onMqttConnect);
-  mqttClient.onDisconnect(onMqttDisconnect);
-  mqttClient.onMessage(onMqttMessage);
-  mqttClient.setServer(mqtt_server, port);
 
   //wifiManager.autoConnect();
   if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
@@ -168,6 +158,7 @@ void setup() {
   //save the custom parameters to FS
   if (shouldSaveConfig) {
     Serial.println("saving config");
+    LittleFS.format();
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["mqtt_server"] = mqtt_server;
@@ -182,6 +173,7 @@ void setup() {
 
     json.prettyPrintTo(Serial);
     json.printTo(configFile);
+    Serial.println();
     configFile.close();
     //end save
     shouldSaveConfig = false;
@@ -189,6 +181,12 @@ void setup() {
 
   //wifiManager.setConnectTimeout(300);
   //wifiManager.startConfigPortal("AutoConnectAP", "password");
+
+  mqttClient.setCredentials( mqtt_user, mqtt_psw );
+  mqttClient.onConnect(onMqttConnect);
+  mqttClient.onDisconnect(onMqttDisconnect);
+  mqttClient.onMessage(onMqttMessage);
+  mqttClient.setServer(mqtt_server, MQTT_PORT);
 
   connectToMqtt();
 }
