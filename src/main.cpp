@@ -26,10 +26,10 @@ char mqtt_psw[40];
 
 const char* state = "wemos/state";
 const char* command = "wemos/command";
-const char* toggle = "toggle";
-const char* reset = "reset";
-const char* reboot = "reboot";
-const char* OTA = "OTA";
+const char toggle[] = "toggle";
+const char reset[] = "reset";
+const char reboot[] = "reboot";
+const char OTA[] = "OTA";
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -62,21 +62,30 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  if (topic == command){
-    if (payload == toggle){
-      Serial.print("toggle");
+  char fixedPayload[len + 1];
+  for (int i = 0; i <= len; i++) {
+    if (i == len) {
+      fixedPayload[i] = '\0';
+      continue;
     }
-    else if (payload == reset){
-      Serial.print("reset");
-      //wifiManager.resetSettings();
-    }
-    else if (payload == reboot){
-      Serial.print("reboot");
-      ESP.restart();
-    }
-    else if (payload == OTA){
-      Serial.print("OTA");
-    }
+    fixedPayload[i] = payload[i];
+  }
+
+  Serial.println(fixedPayload);
+
+  if (fixedPayload == toggle){
+    Serial.println("toggle");
+  }
+  else if (fixedPayload == reset){
+    Serial.println("reset");
+    //wifiManager.resetSettings();
+  }
+  else if (fixedPayload == reboot){
+    Serial.println("reboot");
+    ESP.restart();
+  }
+  else if (fixedPayload == OTA){
+    Serial.print("OTA");
   }
 }
 
