@@ -5,6 +5,7 @@
 
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
+#include <AsyncElegantOTA.h>
 
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncWiFiManager.h>
@@ -14,10 +15,9 @@
 #define MQTT_PORT 1883
 
 AsyncWebServer server(80);
-DNSServer dns;
-
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
+DNSServer dns;
 
 char mqtt_server[40];
 char mqtt_port[6]; 
@@ -26,18 +26,31 @@ char mqtt_psw[40];
 
 const char* state = "wemos/state";
 const char* command = "wemos/command";
-const char toggle[] = "toggle";
-const char reset[] = "reset";
-const char reboot[] = "reboot";
-const char OTA[] = "OTA";
 
-//flag for saving data
+const String toggle = "toggle";
+const String reset = "reset";
+const String reboot = "reboot";
+const String OTA = "OTA";
+
 bool shouldSaveConfig = false;
+bool otaserver = false;
 
-//callback notifying us of the need to save config
-void saveConfigCallback () {
-  Serial.println("Should save config");
-  shouldSaveConfig = true;
+void reset_config(){
+    Serial.println("Reset config WiFi.");
+    //wifiManager.resetSettings();
+    ESP.restart();
+  }
+
+void OTA_server(){
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hi! I am ESP32Cam.");
+  });
+
+  AsyncElegantOTA.begin(&server);    // Start ElegantOTA
+  server.begin();
+  Serial.println("HTTP OTA server started");
+
+  otaserver = true;
 }
 
 void connectToMqtt() {
@@ -71,22 +84,29 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     fixedPayload[i] = payload[i];
   }
 
-  Serial.println(fixedPayload);
+  String value = String(fixedPayload);
 
-  if (fixedPayload == toggle){
-    Serial.println("toggle");
+  if (value == toggle){
+    mqttClient.publish( state, 2, true, "toggle" );
   }
-  else if (fixedPayload == reset){
-    Serial.println("reset");
-    //wifiManager.resetSettings();
+  else if (value == reset){
+    mqttClient.publish( state, 2, true, "reset" );
+    reset_config();
   }
-  else if (fixedPayload == reboot){
-    Serial.println("reboot");
+  else if (value == reboot){
+    Serial.println("rebooting...");
+    mqttClient.publish( state, 2, true, "reboot" );
     ESP.restart();
   }
-  else if (fixedPayload == OTA){
-    Serial.print("OTA");
+  else if (value == OTA){
+    mqttClient.publish( state, 2, true, "OTA" );
+    OTA_server();
   }
+}
+
+void saveConfigCallback () {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
 }
 
 void load_config(){
@@ -108,7 +128,7 @@ void load_config(){
         configFile.readBytes(buf.get(), size);
         DynamicJsonBuffer jsonBuffer;
         JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial);
+        //json.printTo(Serial);
         if (json.success()) {
           Serial.println("\nparsed json");
           strcpy(mqtt_server, json["mqtt_server"]);
@@ -201,5 +221,7 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  if ( otaserver ){
+    AsyncElegantOTA.loop();
+  }
 }
