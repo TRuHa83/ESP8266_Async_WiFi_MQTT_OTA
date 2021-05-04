@@ -16,34 +16,69 @@
 
 AsyncWebServer server(80);
 AsyncMqttClient mqttClient;
-Ticker mqttReconnectTimer;
 DNSServer dns;
 
-char mqtt_server[40];
-char mqtt_port[6]; 
-char mqtt_user[40];
-char mqtt_psw[40];
+AsyncWiFiManager wifiManager(&server,&dns);
 
+Ticker mqttReconnectTimer;
+Ticker alive;
+
+char mqtt_server[40]; // variable to store the mqtt server
+char mqtt_port[6];    // variable to store the mqtt port
+char mqtt_user[40];   // variable to store the mqtt user
+char mqtt_psw[40];    // variable to store the mqtt psw
+
+// Topics
 const char* state = "wemos/state";
 const char* command = "wemos/command";
+const char* setState = "wemos/state/set/state";
 
-const String toggle = "toggle";
+// Commands
 const String reset = "reset";
 const String reboot = "reboot";
 const String OTA = "OTA";
 
+const int relay = 5; // Digital pinout Relay
+char* statusRelay;   // variable to store state Relay
+ 
+
 bool shouldSaveConfig = false;
 bool otaserver = false;
 
+void sendAlive(){
+  if (digitalRead(relay) == 0){
+    statusRelay = "OFF";
+  }
+  else{
+    statusRelay = "ON";
+  }
+
+  mqttClient.publish( state, 2, true, statusRelay );
+}
+
+void changeState(String value){
+  if (value == "ON" || value == "1"){
+    digitalWrite(relay, HIGH);
+    mqttClient.publish( state, 2, true, "ON" );
+  }
+  else if (value == "OFF" || value == "0"){
+    digitalWrite(relay, LOW);
+    mqttClient.publish( state, 2, true, "OFF" );
+  }
+
+  Serial.print("Change state to: ");
+  Serial.println(value);
+}
+
 void reset_config(){
     Serial.println("Reset config WiFi.");
-    //wifiManager.resetSettings();
+    wifiManager.resetSettings();
     ESP.restart();
   }
 
 void OTA_server(){
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Hi! I am ESP32Cam.");
+    request->send(200, "text/plain", "Hi! I am ESP8266.");
   });
 
   AsyncElegantOTA.begin(&server);    // Start ElegantOTA
@@ -64,6 +99,9 @@ void onMqttConnect(bool sessionPresent) {
 
   mqttClient.publish( state, 2, true, "ready" );
   mqttClient.subscribe( command, 2 );
+  mqttClient.subscribe( setState, 2 );
+
+  alive.attach(300, sendAlive);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -72,6 +110,8 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   if (WiFi.isConnected()) {
     mqttReconnectTimer.once(2, connectToMqtt);
   }
+
+  alive.detach();
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
@@ -84,23 +124,26 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     fixedPayload[i] = payload[i];
   }
 
-  String value = String(fixedPayload);
+  String valueT = String(topic);
+  String valueP = String(fixedPayload);
 
-  if (value == toggle){
-    mqttClient.publish( state, 2, true, "toggle" );
+  if (valueT == setState){
+    changeState(valueP);
   }
-  else if (value == reset){
-    mqttClient.publish( state, 2, true, "reset" );
-    reset_config();
-  }
-  else if (value == reboot){
-    Serial.println("rebooting...");
-    mqttClient.publish( state, 2, true, "reboot" );
-    ESP.restart();
-  }
-  else if (value == OTA){
-    mqttClient.publish( state, 2, true, "OTA" );
-    OTA_server();
+  else {
+    if (valueP == reset){
+      mqttClient.publish( state, 2, true, "reset" );
+      reset_config();
+    }
+    else if (valueP == reboot){
+      Serial.println("rebooting...");
+      mqttClient.publish( state, 2, true, "rebooting..." );
+      ESP.restart();
+    }
+    else if (valueP == OTA){
+      mqttClient.publish( state, 2, true, "OTA" );
+      OTA_server();
+    }
   }
 }
 
@@ -128,7 +171,7 @@ void load_config(){
         configFile.readBytes(buf.get(), size);
         DynamicJsonBuffer jsonBuffer;
         JsonObject& json = jsonBuffer.parseObject(buf.get());
-        //json.printTo(Serial);
+        //json.printTo(Serial); // show configuration file
         if (json.success()) {
           Serial.println("\nparsed json");
           strcpy(mqtt_server, json["mqtt_server"]);
@@ -153,9 +196,10 @@ void load_config(){
 void setup() {
   Serial.begin(115200);
 
-  load_config();
+  // Setup Pins
+  pinMode(relay, OUTPUT);
 
-  AsyncWiFiManager wifiManager(&server,&dns);
+  load_config();
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
@@ -200,16 +244,13 @@ void setup() {
       Serial.println("failed to open config file for writing");
     }
 
-    json.prettyPrintTo(Serial);
-    json.printTo(configFile);
-    Serial.println();
+    //json.prettyPrintTo(Serial);
+    //json.printTo(configFile);
+
     configFile.close();
     //end save
     shouldSaveConfig = false;
   }
-
-  //wifiManager.setConnectTimeout(300);
-  //wifiManager.startConfigPortal("AutoConnectAP", "password");
 
   mqttClient.setCredentials( mqtt_user, mqtt_psw );
   mqttClient.onConnect(onMqttConnect);
