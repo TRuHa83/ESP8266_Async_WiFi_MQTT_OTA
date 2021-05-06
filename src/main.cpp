@@ -59,7 +59,7 @@ void sendAlive(){
     statusRelay = "ON";
   }
 
-  mqttClient.publish( state, 2, true, statusRelay );
+  mqttClient.publish( topicState, 2, true, statusRelay );
 }
 
 void changeState(String value){
