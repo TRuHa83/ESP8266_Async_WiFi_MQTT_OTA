@@ -23,15 +23,21 @@ AsyncWiFiManager wifiManager(&server,&dns);
 Ticker mqttReconnectTimer;
 Ticker alive;
 
-char mqtt_server[40]; // variable to store the mqtt server
-char mqtt_port[6];    // variable to store the mqtt port
-char mqtt_user[40];   // variable to store the mqtt user
-char mqtt_psw[40];    // variable to store the mqtt psw
+char IDname[20] = "wemos";  // variable to store ID name
+char mqtt_server[40];       // variable to store the mqtt server
+char mqtt_port[6];          // variable to store the mqtt port
+char mqtt_user[40];         // variable to store the mqtt user
+char mqtt_psw[40];          // variable to store the mqtt psw
 
 // Topics
-const char* state = "wemos/state";
-const char* command = "wemos/command";
-const char* setState = "wemos/state/set/state";
+const char* state = "/state";
+const char* command = "/command";
+const char* setState = "/set/state";
+
+char topicState[40];
+char topicCommnad[60];
+char topicSetState[80];
+
 
 // Commands
 const String reset = "reset";
@@ -59,11 +65,11 @@ void sendAlive(){
 void changeState(String value){
   if (value == "ON" || value == "1"){
     digitalWrite(relay, HIGH);
-    mqttClient.publish( state, 2, true, "ON" );
+    mqttClient.publish( topicState, 2, true, "ON" );
   }
   else if (value == "OFF" || value == "0"){
     digitalWrite(relay, LOW);
-    mqttClient.publish( state, 2, true, "OFF" );
+    mqttClient.publish( topicState, 2, true, "OFF" );
   }
 
   Serial.print("Change state to: ");
@@ -73,7 +79,6 @@ void changeState(String value){
 void reset_config(){
     Serial.println("Reset config WiFi.");
     wifiManager.resetSettings();
-    ESP.restart();
   }
 
 void OTA_server(){
@@ -94,12 +99,14 @@ void connectToMqtt() {
 }
 
 void onMqttConnect(bool sessionPresent) {
-  Serial.println("done.");
-  Serial.println("Wemos ready.");
+  Serial.println(" done.");
 
-  mqttClient.publish( state, 2, true, "ready" );
-  mqttClient.subscribe( command, 2 );
-  mqttClient.subscribe( setState, 2 );
+  Serial.print(IDname);
+  Serial.println(" ready.");
+
+  mqttClient.publish( topicState, 2, true, "ready" );
+  mqttClient.subscribe( topicCommnad, 2 );
+  mqttClient.subscribe( topicSetState, 2 );
 
   alive.attach(300, sendAlive);
 }
@@ -127,24 +134,35 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   String valueT = String(topic);
   String valueP = String(fixedPayload);
 
-  if (valueT == setState){
+  if (valueT == topicSetState){
     changeState(valueP);
   }
   else {
     if (valueP == reset){
-      mqttClient.publish( state, 2, true, "reset" );
+      mqttClient.publish( topicState, 2, true, "reset" );
       reset_config();
     }
     else if (valueP == reboot){
       Serial.println("rebooting...");
-      mqttClient.publish( state, 2, true, "rebooting..." );
+      mqttClient.publish( topicState, 2, true, "rebooting..." );
       ESP.restart();
     }
     else if (valueP == OTA){
-      mqttClient.publish( state, 2, true, "OTA" );
+      mqttClient.publish( topicState, 2, true, "OTA" );
       OTA_server();
     }
   }
+}
+
+void makeTopics(){
+  strcpy(topicState, IDname);
+  strcat(topicState, state);
+
+  strcpy(topicCommnad, IDname);
+  strcat(topicCommnad, command);
+
+  strcpy(topicSetState, IDname);
+  strcat(topicSetState, setState);
 }
 
 void saveConfigCallback () {
@@ -171,9 +189,10 @@ void load_config(){
         configFile.readBytes(buf.get(), size);
         DynamicJsonBuffer jsonBuffer;
         JsonObject& json = jsonBuffer.parseObject(buf.get());
-        //json.printTo(Serial); // show configuration file
+        json.printTo(Serial); // show configuration file
         if (json.success()) {
           Serial.println("\nparsed json");
+          strcpy(IDname, json["IDname"]);
           strcpy(mqtt_server, json["mqtt_server"]);
           strcpy(mqtt_port, json["mqtt_port"]);
           strcpy(mqtt_user, json["mqtt_user"]);
@@ -181,6 +200,13 @@ void load_config(){
 
         } else {
           Serial.println("failed to load json config");
+          LittleFS.remove("/config.json");
+
+          wifiManager.resetSettings();
+          Serial.println("Rebooting as default config");
+
+          delay(5);
+          ESP.restart();
         }
       }
     } else {
@@ -204,11 +230,13 @@ void setup() {
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   // id/name, placeholder/prompt, default, length
+  AsyncWiFiManagerParameter custom_name("name", "ID / Name", IDname, 40);
   AsyncWiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
   AsyncWiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 5);
   AsyncWiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 40);
   AsyncWiFiManagerParameter custom_mqtt_psw("psw", "mqtt password", mqtt_psw, 40);
 
+  wifiManager.addParameter(&custom_name);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
   wifiManager.addParameter(&custom_mqtt_user);
@@ -223,6 +251,7 @@ void setup() {
     delay(5000);
   }
 
+  strcpy(IDname, custom_name.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
   strcpy(mqtt_user, custom_mqtt_user.getValue());
@@ -234,6 +263,8 @@ void setup() {
     LittleFS.format();
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
+
+    json["IDname"] = IDname;
     json["mqtt_server"] = mqtt_server;
     json["mqtt_port"]   = mqtt_port;
     json["mqtt_user"]   = mqtt_user;
@@ -244,13 +275,16 @@ void setup() {
       Serial.println("failed to open config file for writing");
     }
 
-    //json.prettyPrintTo(Serial);
-    //json.printTo(configFile);
+    json.prettyPrintTo(Serial);
+    json.printTo(configFile);
+    Serial.println();
 
     configFile.close();
     //end save
     shouldSaveConfig = false;
   }
+
+  makeTopics();
 
   mqttClient.setCredentials( mqtt_user, mqtt_psw );
   mqttClient.onConnect(onMqttConnect);
