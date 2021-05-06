@@ -24,6 +24,7 @@ This sketch implements in a stable way Wi-Fi management and configuration for MQ
 
   ```
   {
+   "IDname": (ID / Name),
    "mqtt_server":(IP/Host MQTT Server),
    "mqtt_port":(Port MQTT Server),
    "mqtt_user":(User MQTT Server),
@@ -45,7 +46,7 @@ This sketch implements in a stable way Wi-Fi management and configuration for MQ
 
     ```
     {
-     topic : "wemos/state/set/state",
+     topic : "wemos/set/state",
      payload: "ON"
     }
     ```
@@ -83,7 +84,7 @@ This sketch implements in a stable way Wi-Fi management and configuration for MQ
 ## Task lists
 
 - [ ] Option to change the port in the captive portal (currently not working).
-- [ ] Option to change the ClientID or IPAddress in captive portal.
+- [x] Option to change the ClientID or IPAddress in captive portal.
 - [ ] Option to change the pinout.
 - [ ] Send the configuration set through the microcontroller's mqtt payload, such as the IP address or data of interest.
 - [ ] Send the configuration file with IP in AP mode, WiFi passwords, etc...
