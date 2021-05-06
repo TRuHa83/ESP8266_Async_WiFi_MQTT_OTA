@@ -145,6 +145,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     else if (valueP == reboot){
       Serial.println("rebooting...");
       mqttClient.publish( topicState, 2, true, "rebooting..." );
+      delay(5000);
       ESP.restart();
     }
     else if (valueP == OTA){
@@ -189,7 +190,7 @@ void load_config(){
         configFile.readBytes(buf.get(), size);
         DynamicJsonBuffer jsonBuffer;
         JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial); // show configuration file
+        //json.printTo(Serial); // show configuration file
         if (json.success()) {
           Serial.println("\nparsed json");
           strcpy(IDname, json["IDname"]);
@@ -205,7 +206,7 @@ void load_config(){
           wifiManager.resetSettings();
           Serial.println("Rebooting as default config");
 
-          delay(5);
+          delay(5000);
           ESP.restart();
         }
       }
@@ -275,9 +276,9 @@ void setup() {
       Serial.println("failed to open config file for writing");
     }
 
-    json.prettyPrintTo(Serial);
-    json.printTo(configFile);
-    Serial.println();
+    //json.prettyPrintTo(Serial);
+    //json.printTo(configFile);
+    //Serial.println();
 
     configFile.close();
     //end save
